@@ -10,8 +10,10 @@ import { AuthRequest, Hazard } from '../types';
 
 const router = Router();
 
-// Configure multer storage
-const UPLOADS_DIR = path.join(__dirname, '../../uploads');
+// Configure multer storage — use /tmp on Vercel (only writable dir in serverless)
+const UPLOADS_DIR = process.env.VERCEL
+  ? '/tmp/uploads'
+  : path.join(__dirname, '../../uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const storage = multer.diskStorage({

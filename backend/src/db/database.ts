@@ -2,9 +2,13 @@ import Database, { Database as DatabaseType } from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-const DB_PATH = path.join(__dirname, '../../data/safevision.db');
-const DATA_DIR = path.dirname(DB_PATH);
+// On Vercel serverless, only /tmp is writable
+const isVercel = !!process.env.VERCEL;
+const DB_PATH = isVercel
+  ? '/tmp/safevision.db'
+  : path.join(__dirname, '../../data/safevision.db');
 
+const DATA_DIR = path.dirname(DB_PATH);
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
