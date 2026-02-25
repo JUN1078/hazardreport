@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db/database';
+import { getDb } from '../db/database';
 import { authenticateToken } from '../middleware/auth';
 import { analyzeImage } from '../services/aiService';
 import { AuthRequest, Hazard } from '../types';
@@ -39,7 +39,8 @@ const upload = multer({
 });
 
 // GET all inspections for user
-router.get('/', authenticateToken, (req: AuthRequest, res: Response) => {
+router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const db = await getDb();
   const userId = req.user!.id;
   const { page = '1', limit = '20', risk_level, search } = req.query as Record<string, string>;
 
@@ -79,7 +80,8 @@ router.get('/', authenticateToken, (req: AuthRequest, res: Response) => {
 });
 
 // GET single inspection with hazards
-router.get('/:id', authenticateToken, (req: AuthRequest, res: Response) => {
+router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const db = await getDb();
   const { id } = req.params;
   const userId = req.user!.id;
 
@@ -114,6 +116,7 @@ router.post('/analyze', authenticateToken, upload.single('image'), async (req: A
     return;
   }
 
+  const db = await getDb();
   const userId = req.user!.id;
 
   // Create inspection record
@@ -132,15 +135,13 @@ router.post('/analyze', authenticateToken, upload.single('image'), async (req: A
     // Run AI analysis
     const aiResult = await analyzeImage(req.file.path);
 
-    // Save hazards to DB
-    const insertHazard = db.prepare(`
-      INSERT INTO hazards (inspection_id, description, category, hazard_type, severity, likelihood, risk_score, risk_level, engineering_control, administrative_control, ppe_control, immediate_action, confidence)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
+    // Save hazards to DB inside a transaction
     const insertMany = db.transaction((hazards: typeof aiResult.hazards) => {
       for (const h of hazards) {
-        insertHazard.run(
+        db.prepare(`
+          INSERT INTO hazards (inspection_id, description, category, hazard_type, severity, likelihood, risk_score, risk_level, engineering_control, administrative_control, ppe_control, immediate_action, confidence)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
           inspectionId, h.description, h.category, h.hazard_type,
           h.severity, h.likelihood, h.risk_score, h.risk_level,
           h.corrective_actions.engineering, h.corrective_actions.administrative,
@@ -173,7 +174,8 @@ router.post('/analyze', authenticateToken, upload.single('image'), async (req: A
 });
 
 // PUT update hazard (manual override)
-router.put('/hazards/:hazardId', authenticateToken, (req: AuthRequest, res: Response) => {
+router.put('/hazards/:hazardId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const db = await getDb();
   const { hazardId } = req.params;
   const userId = req.user!.id;
   const { description, category, hazard_type, severity, likelihood, engineering_control, administrative_control, ppe_control, immediate_action } = req.body;
@@ -238,7 +240,8 @@ router.put('/hazards/:hazardId', authenticateToken, (req: AuthRequest, res: Resp
 });
 
 // DELETE inspection
-router.delete('/:id', authenticateToken, (req: AuthRequest, res: Response) => {
+router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const db = await getDb();
   const { id } = req.params;
   const userId = req.user!.id;
 
@@ -258,7 +261,8 @@ router.delete('/:id', authenticateToken, (req: AuthRequest, res: Response) => {
 });
 
 // POST add hazard manually
-router.post('/:id/hazards', authenticateToken, (req: AuthRequest, res: Response) => {
+router.post('/:id/hazards', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const db = await getDb();
   const { id } = req.params;
   const userId = req.user!.id;
 

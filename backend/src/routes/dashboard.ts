@@ -1,11 +1,12 @@
 import { Router, Response } from 'express';
-import db from '../db/database';
+import { getDb } from '../db/database';
 import { authenticateToken } from '../middleware/auth';
 import { AuthRequest } from '../types';
 
 const router = Router();
 
-router.get('/stats', authenticateToken, (req: AuthRequest, res: Response) => {
+router.get('/stats', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const db = await getDb();
   const userId = req.user!.id;
 
   const totalInspections = (db.prepare(

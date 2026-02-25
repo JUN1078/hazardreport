@@ -4,12 +4,22 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 
+import { getDb } from './db/database';
 import authRoutes from './routes/auth';
 import inspectionRoutes from './routes/inspections';
 import dashboardRoutes from './routes/dashboard';
 import reportRoutes from './routes/reports';
 
 const app = express();
+
+// Warm up the DB connection on first request (sql.js async init)
+let _dbReady = false;
+let _dbReadyPromise: Promise<void> | null = null;
+app.use((_req, _res, next) => {
+  if (_dbReady) return next();
+  if (!_dbReadyPromise) _dbReadyPromise = getDb().then(() => { _dbReady = true; });
+  _dbReadyPromise.then(() => next()).catch(next);
+});
 
 // On Vercel, only /tmp is writable
 const isVercel = !!process.env.VERCEL;

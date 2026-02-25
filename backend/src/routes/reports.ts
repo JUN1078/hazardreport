@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import db from '../db/database';
+import { getDb } from '../db/database';
 import { authenticateToken } from '../middleware/auth';
 import { generatePDFReport, generateExcelReport } from '../services/reportService';
 import { AuthRequest, Inspection, Hazard } from '../types';
@@ -8,6 +8,7 @@ const router = Router();
 
 // GET PDF report
 router.get('/:id/pdf', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const db = await getDb();
   const { id } = req.params;
   const userId = req.user!.id;
 
@@ -40,6 +41,7 @@ router.get('/:id/pdf', authenticateToken, async (req: AuthRequest, res: Response
 
 // GET Excel report
 router.get('/:id/excel', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const db = await getDb();
   const { id } = req.params;
   const userId = req.user!.id;
 
@@ -71,7 +73,8 @@ router.get('/:id/excel', authenticateToken, async (req: AuthRequest, res: Respon
 });
 
 // GET inspection image
-router.get('/:id/image', authenticateToken, (req: AuthRequest, res: Response) => {
+router.get('/:id/image', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const db = await getDb();
   const { id } = req.params;
   const userId = req.user!.id;
 

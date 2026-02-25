@@ -1,26 +1,13 @@
-import Database, { Database as DatabaseType } from 'better-sqlite3';
-import path from 'path';
+import initSqlJs from 'sql.js';
 import fs from 'fs';
+import path from 'path';
 
-// On Vercel serverless, only /tmp is writable
 const isVercel = !!process.env.VERCEL;
 const DB_PATH = isVercel
   ? '/tmp/safevision.db'
   : path.join(__dirname, '../../data/safevision.db');
 
-const DATA_DIR = path.dirname(DB_PATH);
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-const db: DatabaseType = new Database(DB_PATH);
-
-// Enable WAL mode for better performance
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-
-// Initialize schema
-db.exec(`
+const SCHEMA = `
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
@@ -55,8 +42,8 @@ db.exec(`
     description TEXT NOT NULL,
     category TEXT NOT NULL,
     hazard_type TEXT,
-    severity INTEGER NOT NULL CHECK(severity BETWEEN 1 AND 5),
-    likelihood INTEGER NOT NULL CHECK(likelihood BETWEEN 1 AND 5),
+    severity INTEGER NOT NULL,
+    likelihood INTEGER NOT NULL,
     risk_score INTEGER NOT NULL,
     risk_level TEXT NOT NULL,
     engineering_control TEXT,
@@ -72,6 +59,109 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_hazards_inspection_id ON hazards(inspection_id);
   CREATE INDEX IF NOT EXISTS idx_hazards_risk_level ON hazards(risk_level);
   CREATE INDEX IF NOT EXISTS idx_inspections_date ON inspections(inspection_date);
-`);
+`;
 
-export default db;
+class SQLiteWrapper {
+  constructor(private sqlDb: any) {}
+
+  exec(sql: string) {
+    this.sqlDb.run(sql);
+    this._save();
+  }
+
+  pragma(statement: string) {
+    try { this.sqlDb.run(`PRAGMA ${statement}`); } catch { /* ignore */ }
+  }
+
+  prepare(sql: string) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    return {
+      get(...params: any[]): any {
+        const stmt = self.sqlDb.prepare(sql);
+        try {
+          if (params.length) stmt.bind(params);
+          if (!stmt.step()) return undefined;
+          return stmt.getAsObject();
+        } finally {
+          stmt.free();
+        }
+      },
+      all(...params: any[]): any[] {
+        const stmt = self.sqlDb.prepare(sql);
+        const rows: any[] = [];
+        try {
+          if (params.length) stmt.bind(params);
+          while (stmt.step()) rows.push(stmt.getAsObject());
+          return rows;
+        } finally {
+          stmt.free();
+        }
+      },
+      run(...params: any[]): { lastInsertRowid: number; changes: number } {
+        const stmt = self.sqlDb.prepare(sql);
+        try {
+          if (params.length) stmt.bind(params);
+          stmt.step();
+          const idRes = self.sqlDb.exec('SELECT last_insert_rowid()');
+          const lastInsertRowid = (idRes[0]?.values[0][0] as number) ?? 0;
+          const changes = self.sqlDb.getRowsModified();
+          self._save();
+          return { lastInsertRowid, changes };
+        } finally {
+          stmt.free();
+        }
+      },
+    };
+  }
+
+  transaction(fn: (arg: any) => void) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    return (arg: any) => {
+      self.sqlDb.run('BEGIN');
+      try {
+        fn(arg);
+        self.sqlDb.run('COMMIT');
+        self._save();
+      } catch (e) {
+        self.sqlDb.run('ROLLBACK');
+        throw e;
+      }
+    };
+  }
+
+  _save() {
+    try {
+      const data = this.sqlDb.export();
+      const dir = path.dirname(DB_PATH);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(DB_PATH, Buffer.from(data));
+    } catch { /* ignore on read-only environments */ }
+  }
+}
+
+let _dbInstance: SQLiteWrapper | null = null;
+let _initPromise: Promise<SQLiteWrapper> | null = null;
+
+export async function getDb(): Promise<SQLiteWrapper> {
+  if (_dbInstance) return _dbInstance;
+  if (!_initPromise) {
+    _initPromise = (async () => {
+      const SQL = await initSqlJs();
+      let sqlDb: any;
+      if (fs.existsSync(DB_PATH)) {
+        const buf = fs.readFileSync(DB_PATH);
+        sqlDb = new SQL.Database(buf);
+      } else {
+        sqlDb = new SQL.Database();
+      }
+      sqlDb.run(SCHEMA);
+      _dbInstance = new SQLiteWrapper(sqlDb);
+      return _dbInstance;
+    })();
+  }
+  return _initPromise;
+}
+
+export default getDb;

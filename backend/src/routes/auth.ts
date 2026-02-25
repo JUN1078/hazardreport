@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import db from '../db/database';
+import jwt from 'jsonwebtoken';
+import { getDb } from '../db/database';
 import { generateToken } from '../middleware/auth';
 import { User } from '../types';
 
@@ -21,6 +22,7 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 
   try {
+    const db = await getDb();
     const existing = db.prepare('SELECT id FROM users WHERE username = ? OR email = ?').get(username, email);
     if (existing) {
       res.status(409).json({ error: 'Username or email already exists' });
@@ -57,6 +59,7 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 
   try {
+    const db = await getDb();
     const user = db.prepare('SELECT * FROM users WHERE username = ? OR email = ?')
       .get(username, username) as User | undefined;
 
@@ -82,7 +85,7 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 // Get current user
-router.get('/me', (req: Request, res: Response) => {
+router.get('/me', async (req: Request, res: Response) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) {
@@ -91,8 +94,9 @@ router.get('/me', (req: Request, res: Response) => {
   }
 
   try {
-    const jwt = require('jsonwebtoken');
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'safevision-secret-key-change-in-production') as { id: number };
+    const JWT_SECRET = process.env.JWT_SECRET || 'safevision-secret-key-change-in-production';
+    const payload = jwt.verify(token, JWT_SECRET) as { id: number };
+    const db = await getDb();
     const user = db.prepare('SELECT id, username, email, role, full_name, created_at FROM users WHERE id = ?')
       .get(payload.id);
     if (!user) {
