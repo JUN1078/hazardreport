@@ -106,8 +106,11 @@ export async function analyzeImage(imagePath: string): Promise<AIAnalysisResult>
   else if (ext === '.webp') mimeType = 'image/webp';
   else mimeType = 'image/jpeg';
 
-  // Use gemini-1.5-flash for fast vision analysis
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  // Use gemini-1.5-flash via v1 API (v1beta does not support this model)
+  const model = genAI.getGenerativeModel(
+    { model: 'gemini-1.5-flash' },
+    { apiVersion: 'v1' }
+  );
 
   const imagePart: Part = {
     inlineData: {
