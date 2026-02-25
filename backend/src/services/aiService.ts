@@ -1,9 +1,11 @@
-import { GoogleGenerativeAI, Part } from '@google/generative-ai';
+import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 import { AIAnalysisResult, RiskLevel } from '../types';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 const HIRA_PROMPT = `You are a certified workplace safety expert specializing in HIRA (Hazard Identification and Risk Assessment) with 20+ years of field experience across construction, manufacturing, and industrial sectors.
 
@@ -106,38 +108,46 @@ export async function analyzeImage(imagePath: string): Promise<AIAnalysisResult>
   else if (ext === '.webp') mimeType = 'image/webp';
   else mimeType = 'image/jpeg';
 
-  // Use gemini-1.5-flash via v1 API (v1beta does not support this model)
-  const model = genAI.getGenerativeModel(
-    { model: 'gemini-1.5-flash' },
-    { apiVersion: 'v1' }
-  );
+  const response = await client.chat.completions.create({
+    model: 'gpt-4o',
+    max_tokens: 4096,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:${mimeType};base64,${base64Image}`,
+              detail: 'high',
+            },
+          },
+          {
+            type: 'text',
+            text: HIRA_PROMPT,
+          },
+        ],
+      },
+    ],
+  });
 
-  const imagePart: Part = {
-    inlineData: {
-      data: base64Image,
-      mimeType,
-    },
-  };
-
-  const result = await model.generateContent([HIRA_PROMPT, imagePart]);
-  const response = await result.response;
-  let rawText = response.text().trim();
+  const rawText = (response.choices[0]?.message?.content || '').trim();
 
   // Strip markdown code blocks if present
-  if (rawText.startsWith('```')) {
-    rawText = rawText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+  let cleanText = rawText;
+  if (cleanText.startsWith('```')) {
+    cleanText = cleanText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
   }
 
   let parsed: any;
   try {
-    parsed = JSON.parse(rawText);
+    parsed = JSON.parse(cleanText);
   } catch {
-    // Try to extract JSON from response
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       parsed = JSON.parse(jsonMatch[0]);
     } else {
-      throw new Error('Failed to parse Gemini response as JSON');
+      throw new Error('Failed to parse OpenAI response as JSON');
     }
   }
 
@@ -145,7 +155,6 @@ export async function analyzeImage(imagePath: string): Promise<AIAnalysisResult>
     ? parsed.hazards.map(validateAndFixHazard)
     : [];
 
-  // Determine overall risk from max hazard score
   let overallRisk: RiskLevel = 'Low';
   if (hazards.length > 0) {
     const maxScore = Math.max(...hazards.map((h: any) => h.risk_score));
