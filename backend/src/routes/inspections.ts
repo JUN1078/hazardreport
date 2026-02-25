@@ -108,7 +108,7 @@ router.post('/analyze', authenticateToken, upload.single('image'), async (req: A
     return;
   }
 
-  const { project_name, location, inspection_date, inspector_name, department, notes } = req.body;
+  const { project_name, location, inspection_date, inspector_name, department, notes, latitude, longitude, location_accuracy } = req.body;
 
   if (!project_name || !inspection_date) {
     fs.unlinkSync(req.file.path);
@@ -118,15 +118,19 @@ router.post('/analyze', authenticateToken, upload.single('image'), async (req: A
 
   const db = await getDb();
   const userId = req.user!.id;
+  const lat = latitude ? parseFloat(latitude) : null;
+  const lng = longitude ? parseFloat(longitude) : null;
+  const acc = location_accuracy ? parseFloat(location_accuracy) : null;
 
   // Create inspection record
   const insertResult = db.prepare(`
-    INSERT INTO inspections (user_id, project_name, location, inspection_date, inspector_name, department, image_path, image_filename, status, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'analyzing', ?)
+    INSERT INTO inspections (user_id, project_name, location, inspection_date, inspector_name, department, image_path, image_filename, status, notes, latitude, longitude, location_accuracy)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'analyzing', ?, ?, ?, ?)
   `).run(
     userId, project_name, location || null, inspection_date,
     inspector_name || null, department || null,
-    req.file.path, req.file.originalname, notes || null
+    req.file.path, req.file.originalname, notes || null,
+    lat, lng, acc
   );
 
   const inspectionId = insertResult.lastInsertRowid as number;

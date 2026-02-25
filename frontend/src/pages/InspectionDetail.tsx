@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Download, FileSpreadsheet, FileText, Trash2,
-  AlertTriangle, CheckCircle2, RefreshCw, PlusCircle, X
+  AlertTriangle, CheckCircle2, RefreshCw, PlusCircle, X,
+  MapPin, ExternalLink, Navigation
 } from 'lucide-react';
 import { inspectionApi, reportApi } from '../lib/api';
 import { Inspection, Hazard, RISK_BG_COLORS } from '../types';
@@ -229,6 +230,54 @@ export default function InspectionDetail() {
           <p className="text-xs text-gray-400 text-center mt-2">Numbered badges show hazard count per cell</p>
         </div>
       </div>
+
+      {/* Geotag Map */}
+      {inspection.latitude != null && inspection.longitude != null && (
+        <div className="card overflow-hidden">
+          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="section-title flex items-center gap-2">
+              <MapPin size={16} className="text-brand-600" />
+              Inspection Location
+            </h3>
+            <a
+              href={`https://www.openstreetmap.org/?mlat=${inspection.latitude}&mlon=${inspection.longitude}#map=17/${inspection.latitude}/${inspection.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-brand-600 hover:underline"
+            >
+              <ExternalLink size={12} /> Open in Maps
+            </a>
+          </div>
+          <iframe
+            title="Inspection location"
+            width="100%"
+            height="280"
+            className="border-0 block"
+            loading="lazy"
+            src={`https://www.openstreetmap.org/export/embed.html?bbox=${inspection.longitude - 0.008}%2C${inspection.latitude - 0.005}%2C${inspection.longitude + 0.008}%2C${inspection.latitude + 0.005}&layer=mapnik&marker=${inspection.latitude}%2C${inspection.longitude}`}
+          />
+          <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+            <span className="flex items-center gap-1">
+              <Navigation size={11} className="text-brand-500" />
+              <span className="font-medium text-gray-700">Lat:</span> {inspection.latitude.toFixed(6)}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="font-medium text-gray-700">Long:</span> {inspection.longitude.toFixed(6)}
+            </span>
+            {inspection.location_accuracy != null && (
+              <span className="flex items-center gap-1">
+                <span className="font-medium text-gray-700">GPS Accuracy:</span> ±{Math.round(inspection.location_accuracy)}m
+              </span>
+            )}
+            {inspection.location && (
+              <span className="flex items-center gap-1 truncate max-w-xs">
+                <MapPin size={11} className="text-brand-500 flex-shrink-0" />
+                {inspection.location}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Hazards list */}
       <div className="space-y-3">

@@ -32,6 +32,9 @@ const SCHEMA = `
     overall_risk_level TEXT,
     status TEXT DEFAULT 'pending',
     notes TEXT,
+    latitude REAL,
+    longitude REAL,
+    location_accuracy REAL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
@@ -157,6 +160,12 @@ export async function getDb(): Promise<SQLiteWrapper> {
         sqlDb = new SQL.Database();
       }
       sqlDb.run(SCHEMA);
+      // Migrations: add GPS columns to existing databases (ignore errors if already present)
+      for (const col of [
+        'ALTER TABLE inspections ADD COLUMN latitude REAL',
+        'ALTER TABLE inspections ADD COLUMN longitude REAL',
+        'ALTER TABLE inspections ADD COLUMN location_accuracy REAL',
+      ]) { try { sqlDb.run(col); } catch { /* already exists */ } }
       _dbInstance = new SQLiteWrapper(sqlDb);
       return _dbInstance;
     })();

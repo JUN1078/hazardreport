@@ -34,6 +34,9 @@ export interface Inspection {
   overall_risk_level: RiskLevel | null;
   status: 'pending' | 'analyzing' | 'completed' | 'failed';
   notes: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  location_accuracy: number | null;
   created_at: string;
   hazard_count?: number;
   extreme_count?: number;

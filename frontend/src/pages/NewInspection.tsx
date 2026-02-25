@@ -3,11 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import {
   Upload, X, CheckCircle2, AlertCircle, FileImage,
-  MapPin, Calendar, User, Building2, ChevronRight, Brain
+  MapPin, Calendar, User, Building2, ChevronRight, Brain,
+  Navigation, RefreshCw, Crosshair
 } from 'lucide-react';
 import { inspectionApi } from '../lib/api';
 
 type Step = 'form' | 'preview' | 'analyzing' | 'done' | 'error';
+type GeoStatus = 'idle' | 'loading' | 'success' | 'denied' | 'unavailable' | 'error';
+interface GeoState { status: GeoStatus; lat?: number; lng?: number; accuracy?: number; }
 
 interface FormData {
   project_name: string;
@@ -29,6 +32,7 @@ export default function NewInspection() {
     department: '',
     notes: '',
   });
+  const [geo, setGeo] = useState<GeoState>({ status: 'idle' });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
   const [error, setError] = useState('');
@@ -54,6 +58,33 @@ export default function NewInspection() {
   const setField = (k: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  const captureGPS = () => {
+    if (!navigator.geolocation) { setGeo({ status: 'unavailable' }); return; }
+    setGeo({ status: 'loading' });
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+        setGeo({ status: 'success', lat, lng, accuracy });
+        try {
+          const r = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          const d = await r.json();
+          const addr = [
+            d.address?.road,
+            d.address?.suburb || d.address?.neighbourhood,
+            d.address?.city || d.address?.town || d.address?.village || d.address?.county,
+            d.address?.state,
+          ].filter(Boolean).join(', ') || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          setForm((f) => ({ ...f, location: addr }));
+        } catch { /* no address — coordinates still stored */ }
+      },
+      (err) => setGeo({ status: err.code === 1 ? 'denied' : 'error' }),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  };
+
   const handleSubmit = async () => {
     if (!imageFile) { setError('Please upload an image'); return; }
     if (!form.project_name) { setError('Project name is required'); return; }
@@ -65,6 +96,11 @@ export default function NewInspection() {
     const fd = new FormData();
     fd.append('image', imageFile);
     Object.entries(form).forEach(([k, v]) => { if (v) fd.append(k, v); });
+    if (geo.lat !== undefined && geo.lng !== undefined) {
+      fd.append('latitude', String(geo.lat));
+      fd.append('longitude', String(geo.lng));
+      if (geo.accuracy !== undefined) fd.append('location_accuracy', String(geo.accuracy));
+    }
 
     try {
       const res = await inspectionApi.analyze(fd);
@@ -125,16 +161,64 @@ export default function NewInspection() {
               />
             </div>
 
-            <div>
+            <div className="md:col-span-2">
               <label className="label">
-                <span className="flex items-center gap-1.5"><MapPin size={13} /> Location</span>
+                <span className="flex items-center gap-1.5">
+                  <MapPin size={13} /> Location
+                  <span className="text-xs text-gray-400 font-normal ml-1">— type or capture GPS</span>
+                </span>
               </label>
-              <input
-                className="input"
-                placeholder="e.g. Level 5, Section B"
-                value={form.location}
-                onChange={setField('location')}
-              />
+              <div className="flex gap-2">
+                <input
+                  className="input flex-1"
+                  placeholder="e.g. Level 5, Section B"
+                  value={form.location}
+                  onChange={setField('location')}
+                />
+                <button
+                  type="button"
+                  onClick={captureGPS}
+                  disabled={geo.status === 'loading'}
+                  title="Auto-capture GPS coordinates and address"
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors flex-shrink-0 ${
+                    geo.status === 'success'
+                      ? 'bg-green-50 border-green-300 text-green-700'
+                      : geo.status === 'denied' || geo.status === 'error'
+                      ? 'bg-red-50 border-red-300 text-red-600'
+                      : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-brand-50 hover:border-brand-400 hover:text-brand-700'
+                  }`}
+                >
+                  {geo.status === 'loading'
+                    ? <RefreshCw size={15} className="animate-spin" />
+                    : geo.status === 'success'
+                    ? <CheckCircle2 size={15} />
+                    : <Crosshair size={15} />}
+                  <span className="hidden sm:inline">
+                    {geo.status === 'loading' ? 'Locating…' : geo.status === 'success' ? 'GPS On' : 'Get GPS'}
+                  </span>
+                </button>
+              </div>
+              {geo.status === 'success' && geo.lat !== undefined && (
+                <div className="mt-1.5 flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
+                  <Navigation size={12} className="flex-shrink-0" />
+                  <span>
+                    <span className="font-medium">GPS tagged:</span>{' '}
+                    {geo.lat.toFixed(6)}, {geo.lng!.toFixed(6)}
+                    {geo.accuracy !== undefined && <span className="text-green-600"> · ±{Math.round(geo.accuracy)}m</span>}
+                  </span>
+                </div>
+              )}
+              {geo.status === 'denied' && (
+                <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+                  <AlertCircle size={11} /> Location access denied — enable it in browser settings.
+                </p>
+              )}
+              {(geo.status === 'error' || geo.status === 'unavailable') && (
+                <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+                  <AlertCircle size={11} />
+                  {geo.status === 'unavailable' ? 'Geolocation not supported by this browser.' : 'GPS failed — enter location manually or try again.'}
+                </p>
+              )}
             </div>
 
             <div>
